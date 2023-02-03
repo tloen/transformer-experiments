@@ -1,0 +1,5 @@
+pytorch>=2.0.0
+torchaudio>=2.0.0
+pytorch-cuda==11.8
+transformers>=4.24.0
+tiktoken>=0.1.2
