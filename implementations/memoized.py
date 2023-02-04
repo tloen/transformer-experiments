@@ -6,7 +6,7 @@ from torch.nn import functional as F
 
 from implementations.base import BaseBlock, BaseGPT, BaseCausalSelfAttention, GPTConfig
 
-MAX_BATCH_SIZE = 5
+MAX_BATCH_SIZE = 20
 
 
 class MemoizedCausalSelfAttention(BaseCausalSelfAttention):

@@ -61,10 +61,12 @@ def sample(
     end.record()
     torch.cuda.synchronize()
 
+    """
     # visualize outputs
     idx = idx.to("cpu").numpy()
     for i in range(batch_size):
         print(decode(u[i]), "🩹", decode(idx[i][len(u[i]) :]))
+    """
 
     del cuda_u
     return start.elapsed_time(end) / 1e3
@@ -83,8 +85,9 @@ def benchmark(
 if __name__ == "__main__":
     gpt = MemoizedGPT.from_pretrained("gpt2-xl")
     gpt.eval()
-    gpt.half()
+    # gpt.half()
     gpt.cuda()
+    # gpt = torch.compile(gpt)
 
     """
     tok = np.array([[691, 422, 511, 19501, 23755, 618, 287, 17087, 11, 475]])
@@ -106,7 +109,7 @@ if __name__ == "__main__":
 
     """
 
-    for batch_size in tqdm([1]):
+    for batch_size in range(20, 100):
         print(f"batch_size: {batch_size}")
         print(benchmark(gpt, batch_size=batch_size)[0])
     exit()
