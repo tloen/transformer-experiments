@@ -10,6 +10,7 @@ from tqdm import tqdm
 from implementations.karpathy import GPT as KarpathyGPT
 from implementations.base import GPTConfig, BaseGPT
 from implementations.memoized import MemoizedGPT
+from implementations.fp16 import FP16MemoizedGPT
 
 GPT = MemoizedGPT
 
@@ -83,9 +84,9 @@ def benchmark(
 
 
 if __name__ == "__main__":
-    gpt = MemoizedGPT.from_pretrained("gpt2-xl")
+    gpt = FP16MemoizedGPT.from_pretrained("gpt2-xl")
+    # gpt = BaseGPT.from_pretrained("gpt2-xl")
     gpt.eval()
-    # gpt.half()
     gpt.cuda()
     # gpt = torch.compile(gpt)
 
@@ -109,7 +110,8 @@ if __name__ == "__main__":
 
     """
 
-    for batch_size in range(20, 100):
+    for batch_size in [32]:
         print(f"batch_size: {batch_size}")
-        print(benchmark(gpt, batch_size=batch_size)[0])
+        print("time (seconds):", benchmark(gpt, batch_size=batch_size)[0])
+        time.sleep(1)
     exit()
