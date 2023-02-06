@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     """
 
-    for batch_size in [32]:
+    for batch_size in [50]:
         print(f"batch_size: {batch_size}")
         print("time (seconds):", benchmark(gpt, batch_size=batch_size)[0])
         time.sleep(1)

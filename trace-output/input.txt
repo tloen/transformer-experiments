@@ -1,0 +1,1 @@
+/opt/nvidia/nsight-compute/2022.4.0/target/linux-desktop-glibc_2_11_3-x64/ncu --export "/home/eric/Documents/NVIDIA Nsight Compute/fp16_50" --force-overwrite /home/eric/miniconda3/envs/dl/bin/python harness.py

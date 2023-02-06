@@ -4,15 +4,21 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from implementations.base import BaseBlock, BaseGPT, BaseCausalSelfAttention, GPTConfig
+from implementations.base import (
+    BaseBlock,
+    BaseGPT,
+    BaseCausalSelfAttention,
+    GPTConfig,
+    ModuleConfig,
+)
 
 MAX_LEN = 512
-MAX_BATCH_SIZE = 100
+MAX_BATCH_SIZE = 50
 
 
 class MemoizedCausalSelfAttention(BaseCausalSelfAttention):
-    def __init__(self, config):
-        super().__init__(config=config)
+    def __init__(self, config, module_config: ModuleConfig):
+        super().__init__(config=config, module_config=module_config)
         assert config.n_embd % config.n_head == 0
 
         # BEGIN CHANGES
@@ -48,10 +54,14 @@ class MemoizedCausalSelfAttention(BaseCausalSelfAttention):
 
         # END CHANGES
 
-        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
-        self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
-        self.attn_dropout = nn.Dropout(config.dropout)
-        self.resid_dropout = nn.Dropout(config.dropout)
+        self.c_attn = module_config.Linear(
+            config.n_embd, 3 * config.n_embd, bias=config.bias
+        )
+        self.c_proj = module_config.Linear(
+            config.n_embd, config.n_embd, bias=config.bias
+        )
+        self.attn_dropout = module_config.Dropout(config.dropout)
+        self.resid_dropout = module_config.Dropout(config.dropout)
         self.register_buffer(
             "bias",
             torch.tril(torch.ones(config.block_size, config.block_size)).view(
@@ -138,7 +148,9 @@ class MemoizedCausalSelfAttention(BaseCausalSelfAttention):
 
 class MemoizedGPT(BaseGPT):
     def __init__(self, config: GPTConfig):
-        super().__init__(config, attn_class=MemoizedCausalSelfAttention)
+        super().__init__(
+            config, ModuleConfig(CausalSelfAttention=MemoizedCausalSelfAttention)
+        )
 
     def forward(self, idx, targets=None, offset=0):
         device = idx.device

@@ -8,6 +8,7 @@ implementations of the same module.
 
 import math
 from dataclasses import dataclass
+from typing import Type
 
 import torch
 import torch.nn as nn
@@ -42,16 +43,20 @@ class BaseLayerNorm(nn.Module):
 
 
 class BaseCausalSelfAttention(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, module_config):
         super().__init__()
         assert config.n_embd % config.n_head == 0
         # key, query, value projections for all heads, but in a batch
-        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
+        self.c_attn = module_config.Linear(
+            config.n_embd, 3 * config.n_embd, bias=config.bias
+        )
         # output projection
-        self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+        self.c_proj = module_config.Linear(
+            config.n_embd, config.n_embd, bias=config.bias
+        )
         # regularization
-        self.attn_dropout = nn.Dropout(config.dropout)
-        self.resid_dropout = nn.Dropout(config.dropout)
+        self.attn_dropout = module_config.Dropout(config.dropout)
+        self.resid_dropout = module_config.Dropout(config.dropout)
         # causal mask to ensure that attention is only applied to the left in the input sequence
         self.register_buffer(
             "bias",
@@ -97,11 +102,15 @@ class BaseCausalSelfAttention(nn.Module):
 
 
 class BaseMLP(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, module_config):
         super().__init__()
-        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
-        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias)
-        self.dropout = nn.Dropout(config.dropout)
+        self.c_fc = module_config.Linear(
+            config.n_embd, 4 * config.n_embd, bias=config.bias
+        )
+        self.c_proj = module_config.Linear(
+            4 * config.n_embd, config.n_embd, bias=config.bias
+        )
+        self.dropout = module_config.Dropout(config.dropout)
 
     def forward(self, x):
         x = self.c_fc(x)
@@ -115,15 +124,13 @@ class BaseBlock(nn.Module):
     def __init__(
         self,
         config,
-        attn_class=BaseCausalSelfAttention,
-        mlp_class=BaseMLP,
-        layer_norm_class=BaseLayerNorm,
+        module_config,
     ):
         super().__init__()
-        self.ln_1 = layer_norm_class(config.n_embd, bias=config.bias)
-        self.attn = attn_class(config)
-        self.ln_2 = layer_norm_class(config.n_embd, bias=config.bias)
-        self.mlp = mlp_class(config)
+        self.ln_1 = module_config.LayerNorm(config.n_embd, bias=config.bias)
+        self.attn = module_config.CausalSelfAttention(config, module_config)
+        self.ln_2 = module_config.LayerNorm(config.n_embd, bias=config.bias)
+        self.mlp = module_config.MLP(config, module_config)
 
     def forward(self, x):
         x = x + self.attn(self.ln_1(x))
@@ -142,35 +149,49 @@ class GPTConfig:
     bias: bool = True  # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
 
 
+@dataclass
+class ModuleConfig:
+    Block: Type[BaseBlock] = BaseBlock
+    CausalSelfAttention: Type[BaseCausalSelfAttention] = BaseCausalSelfAttention
+    MLP: Type[BaseMLP] = BaseMLP
+    LayerNorm: Type[BaseLayerNorm] = BaseLayerNorm
+    Linear: Type[nn.Module] = nn.Linear
+    Dropout: Type[nn.Module] = nn.Dropout
+
+
+DEFAULT_MODULE_CONFIG = ModuleConfig()
+
+
 class BaseGPT(nn.Module):
     def __init__(
         self,
         config,
-        block_class=BaseBlock,
-        attn_class=BaseCausalSelfAttention,
-        mlp_class=BaseMLP,
-        layer_norm_class=BaseLayerNorm,
+        module_config=DEFAULT_MODULE_CONFIG,
+        init_weights=False,
     ):
         super().__init__()
         assert config.vocab_size is not None
         assert config.block_size is not None
         self.config = config
+        self.module_config = module_config
 
         self.transformer = nn.ModuleDict(
             dict(
                 wte=nn.Embedding(config.vocab_size, config.n_embd),
                 wpe=nn.Embedding(config.block_size, config.n_embd),
-                drop=nn.Dropout(config.dropout),
+                drop=module_config.Dropout(config.dropout),
                 h=nn.ModuleList(
                     [
-                        block_class(config, attn_class=attn_class, mlp_class=mlp_class)
+                        module_config.Block(config, module_config)
                         for _ in range(config.n_layer)
                     ]
                 ),
-                ln_f=layer_norm_class(config.n_embd, bias=config.bias),
+                ln_f=module_config.LayerNorm(config.n_embd, bias=config.bias),
             )
         )
-        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        self.lm_head = module_config.Linear(
+            config.n_embd, config.vocab_size, bias=False
+        )
         # with weight tying when using torch.compile() some warnings get generated:
         # "UserWarning: functional_call was passed multiple values for tied weights.
         # This behavior is deprecated and will be an error in future versions"
@@ -180,7 +201,8 @@ class BaseGPT(nn.Module):
         )  # https://paperswithcode.com/method/weight-tying
 
         # init all weights
-        self.apply(self._init_weights)
+        if init_weights:
+            self.apply(self._init_weights)
         # apply special scaled init to the residual projections, per GPT-2 paper
         for pn, p in self.named_parameters():
             if pn.endswith("c_proj.weight"):
@@ -193,7 +215,7 @@ class BaseGPT(nn.Module):
         print("number of parameters: %.2fM" % (n_params / 1e6,))
 
     def _init_weights(self, module):
-        if isinstance(module, nn.Linear):
+        if isinstance(module, self.linear_class):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
